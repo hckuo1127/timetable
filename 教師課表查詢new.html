@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <!-- 確保手機能夠正確識別寬度，並允許使用者自由雙指縮放 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    
+    <!-- 針對 Line / FB 等社群軟體預覽的設定 -->
+    <title>新北市立秀峰高級中學115-1 教師課表查詢</title>
+    <meta name="description" content="115-1 教師課表查詢">
+    <meta property="og:title" content="新北市立秀峰高級中學115-1 教師課表查詢">
+    <meta property="og:description" content="115-1 教師課表查詢">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="秀峰高中課表查詢系統">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        /* 針對第4節下方加粗分隔線 */
+        .table-row-sep td { border-bottom: 4px solid #1e3a8a !important; }
+        
+        /* 美化滾動條 (針對手機與電腦版水平滑動) */
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #bfdbfe; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #60a5fa; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-2 md:p-6 font-sans text-gray-800">
+
+    <div class="max-w-7xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden border border-gray-100">
+        <!-- 標題區 (漸層藍色質感美化) -->
+        <div class="bg-gradient-to-r from-blue-800 to-blue-600 text-white p-6 md:p-8 text-center shadow-inner">
+            <h1 class="text-2xl md:text-3xl font-extrabold tracking-wider drop-shadow-md">新北市立秀峰高級中學115-1 教師課表查詢</h1>
+        </div>
+
+        <div class="p-4 md:p-8">
+            <!-- 搜尋與狀態列 -->
+            <div class="bg-blue-50/50 p-5 rounded-xl border border-blue-200 shadow-sm mb-8 flex flex-col md:flex-row items-center justify-between transition-all">
+                <div class="flex flex-col sm:flex-row w-full md:w-3/4 mb-4 md:mb-0 gap-3 items-start sm:items-center">
+                    <label for="teacherInput" class="font-bold text-blue-900 whitespace-nowrap text-lg">輸入教師：</label>
+                    <div class="flex w-full shadow-sm rounded-lg">
+                        <input type="text" id="teacherInput" disabled
+                               class="form-input block w-full px-4 py-2.5 text-base text-gray-700 bg-gray-100 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:cursor-not-allowed transition-colors" 
+                               placeholder="資料庫載入中...">
+                        <button id="searchBtn" disabled
+                                class="px-6 py-2.5 bg-gray-400 text-white font-bold text-sm tracking-wider uppercase rounded-r-lg disabled:cursor-not-allowed transition-all duration-200 ease-in-out whitespace-nowrap hover:shadow-md">
+                            查詢課表
+                        </button>
+                    </div>
+                </div>
+                <div id="statusIndicator" class="text-sm font-bold text-gray-500 w-full md:w-auto text-left md:text-right mt-2 md:mt-0 px-3 py-1 bg-white rounded-full border border-gray-200 shadow-sm">
+                    <span class="animate-pulse">🔄</span> 尋找 timetable.csv...
+                </div>
+            </div>
+
+            <!-- 隱藏的上傳區塊 -->
+            <div id="fallbackUploadArea" class="hidden bg-yellow-50 p-6 rounded-xl border border-yellow-300 shadow-sm mb-8">
+                <h2 class="font-bold text-lg text-red-600 mb-3 flex items-center">
+                    <svg class="w-6 h-6 mr-2 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    請將資料庫檔名更正為 timetable.csv，或手動匯入檔案
+                </h2>
+                <label for="fileInput" class="block text-sm font-medium text-gray-700 mb-2">手動上傳正確的課表檔案 (.csv, .xls, .xlsx)：</label>
+                <input type="file" id="fileInput" accept=".csv, .xls, .xlsx" 
+                       class="block w-full text-sm text-gray-500
+                              file:mr-4 file:py-2 file:px-4
+                              file:rounded-full file:border-0
+                              file:text-sm file:font-bold
+                              file:bg-yellow-500 file:text-white
+                              hover:file:bg-yellow-600 cursor-pointer transition-colors">
+            </div>
+
+            <!-- 查詢結果標題 (預設隱藏，查到資料才顯示) -->
+            <div id="resultHeader" class="hidden mb-6 mt-4 text-center transform transition-all">
+                <h2 id="currentTeacherTitle" class="text-3xl font-black text-blue-800 inline-block px-6 py-2 border-b-4 border-blue-600 rounded-sm tracking-widest shadow-sm bg-blue-50/50"></h2>
+            </div>
+
+            <!-- 課表顯示區 (加入自訂滾動條與陰影美化) -->
+            <div class="overflow-x-auto rounded-xl border border-gray-300 shadow-md custom-scrollbar bg-white">
+                <!-- table-fixed 強制等寬，min-w-[800px] 確保手機版不會擠壓變形 -->
+                <table class="w-full min-w-[800px] divide-y divide-gray-300 text-center table-fixed">
+                    <thead class="bg-blue-100">
+                        <tr>
+                            <th scope="col" class="px-2 py-4 text-[0.95rem] font-black text-blue-900 uppercase tracking-widest border-r border-blue-200 w-[100px] md:w-[120px]">節次 \ 星期</th>
+                            <th scope="col" class="px-2 py-4 text-[0.95rem] font-black text-blue-900 uppercase tracking-widest border-r border-blue-200">一</th>
+                            <th scope="col" class="px-2 py-4 text-[0.95rem] font-black text-blue-900 uppercase tracking-widest border-r border-blue-200">二</th>
+                            <th scope="col" class="px-2 py-4 text-[0.95rem] font-black text-blue-900 uppercase tracking-widest border-r border-blue-200">三</th>
+                            <th scope="col" class="px-2 py-4 text-[0.95rem] font-black text-blue-900 uppercase tracking-widest border-r border-blue-200">四</th>
+                            <th scope="col" class="px-2 py-4 text-[0.95rem] font-black text-blue-900 uppercase tracking-widest">五</th>
+                        </tr>
+                    </thead>
+                    <tbody id="timetableBody" class="bg-white divide-y divide-gray-200">
+                        <tr>
+                            <td colspan="6" class="px-6 py-20 text-center text-gray-400 bg-gray-50">
+                                <div id="noDataMessage" class="flex flex-col items-center">
+                                    <svg class="w-16 h-16 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10l4 4v10a2 2 0 01-2 2z"></path></svg>
+                                    <p class="text-xl font-bold text-gray-500">請輸入教師姓名並點擊查詢</p>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const seniorHighTimes = {
+            1: "08:10-09:00", 2: "09:10-10:00", 3: "10:10-11:00", 4: "11:10-12:00",
+            5: "13:05-13:55", 6: "14:05-14:55", 7: "15:10-16:00", 8: "16:05-16:55" 
+        };
+
+        const juniorHighTimes = {
+            1: "08:20-09:05", 2: "09:15-10:00", 3: "10:10-10:55", 4: "11:10-11:55",
+            5: "13:05-13:50", 6: "14:05-14:50", 7: "15:10-15:55", 8: "16:05-16:50"
+        };
+
+        const weekDayMap = { '一': 1, '二': 2, '三': 3, '四': 4, '五': 5, '六': 6, '日': 7 };
+        let scheduleByTeacher = {}; 
+
+        const fileInput = document.getElementById('fileInput');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const teacherInput = document.getElementById('teacherInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const timetableBody = document.getElementById('timetableBody');
+        const fallbackUploadArea = document.getElementById('fallbackUploadArea');
+        const resultHeader = document.getElementById('resultHeader');
+        const currentTeacherTitle = document.getElementById('currentTeacherTitle');
+
+        function processParsedData(parsedData) {
+            scheduleByTeacher = {}; 
+            let successCount = 0;
+
+            parsedData.forEach(row => {
+                // 相容多種教師欄位名稱
+                const teacher = (row['授課教師'] || row['教師姓名'] || row['教師'] || row['姓名'] || '').toString().trim();
+                const dayStr = row['星期'] ? row['星期'].toString().trim() : '';
+                const day = weekDayMap[dayStr] || parseInt(dayStr); 
+                const period = parseInt(row['節次']);
+                const subject = (row['課程名稱'] || row['課程'] || row['科目'] || '').toString().trim();
+                const className = row['班級'] || '';
+                
+                let startTime = row['開始時間'] ? row['開始時間'].toString().trim() : '';
+                let endTime = row['結束時間'] ? row['結束時間'].toString().trim() : '';
+                
+                let oddEven = '';
+                const rawWeek = row['週別'] || '';
+                if (rawWeek.toString().includes('單')) oddEven = '單';
+                if (rawWeek.toString().includes('雙')) oddEven = '雙';
+                
+                const location = (row['上課地點'] || row['地點'] || row['教室'] || '').toString().trim();
+
+                if (!teacher || isNaN(day) || isNaN(period)) return;
+
+                if (!scheduleByTeacher[teacher]) scheduleByTeacher[teacher] = { 1:{}, 2:{}, 3:{}, 4:{}, 5:{} };
+                if (!scheduleByTeacher[teacher][day][period]) scheduleByTeacher[teacher][day][period] = [];
+                
+                const timeStr = (startTime && endTime) ? `${startTime}-${endTime}` : '';
+
+                if (day >= 1 && day <= 5) {
+                    scheduleByTeacher[teacher][day][period].push({ subject, className, oddEven, location, timeStr });
+                    successCount++;
+                }
+            });
+
+            if (successCount > 0) {
+                statusIndicator.innerHTML = `✅ 成功載入 <b>${successCount}</b> 筆資料`;
+                statusIndicator.className = "text-sm font-bold text-blue-700 w-full md:w-auto text-left md:text-right mt-2 md:mt-0 px-3 py-1 bg-blue-100 rounded-full shadow-sm";
+                
+                teacherInput.disabled = false;
+                searchBtn.disabled = false;
+                teacherInput.classList.remove('bg-gray-100');
+                teacherInput.classList.add('bg-white');
+                searchBtn.classList.remove('bg-gray-400', 'disabled:cursor-not-allowed');
+                searchBtn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'hover:shadow-lg', 'transform', 'active:scale-95');
+                teacherInput.placeholder = "請輸入教師姓名 (按 Enter 查詢)";
+                
+                fallbackUploadArea.classList.add('hidden');
+                teacherInput.focus();
+            } else {
+                showErrorFallback();
+            }
+        }
+
+        // 清空畫面防呆機制
+        function clearTimetableDisplay() {
+            resultHeader.classList.add('hidden');
+            timetableBody.innerHTML = `
+                <tr>
+                    <td colspan="6" class="px-6 py-20 text-center text-gray-400 bg-gray-50">
+                        <div class="flex flex-col items-center animate-pulse">
+                            <svg class="w-16 h-16 text-blue-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+                            <p class="text-xl font-bold text-gray-500">設定已變更</p>
+                            <p class="text-sm mt-2 text-gray-400">請點擊上方「查詢課表」按鈕顯示結果</p>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        // 當輸入框內容改變時，立刻清空畫面
+        teacherInput.addEventListener('input', function() {
+            if (this.value.trim() !== currentTeacherTitle.textContent.replace(' 教師課表', '')) {
+                clearTimetableDisplay();
+            }
+        });
+
+        function showErrorFallback() {
+            alert("請將資料庫檔名更正為 timetable.csv，或手動匯入檔案");
+            statusIndicator.innerHTML = `❌ 載入失敗`;
+            statusIndicator.className = "text-sm font-bold text-red-600 w-full md:w-auto text-left md:text-right mt-2 md:mt-0 px-3 py-1 bg-red-100 rounded-full shadow-sm";
+            teacherInput.placeholder = "請先上傳檔案才能查詢...";
+            fallbackUploadArea.classList.remove('hidden');
+        }
+
+        function parseExcelData(dataBuffer) {
+            try {
+                const workbook = XLSX.read(dataBuffer, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                processParsedData(jsonData);
+            } catch (error) {
+                showErrorFallback();
+            }
+        }
+
+        async function attemptAutoLoad() {
+            const targetFile = 'timetable.csv';
+            try {
+                const res = await fetch(targetFile, { method: 'HEAD', cache: 'no-store' });
+                if (res.ok) {
+                    statusIndicator.innerHTML = `✅ 找到 ${targetFile}，正在載入...`;
+                    Papa.parse(targetFile, {
+                        download: true,
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: function(results) { processParsedData(results.data); },
+                        error: function() { showErrorFallback(); }
+                    });
+                } else {
+                    showErrorFallback();
+                }
+            } catch (e) {
+                showErrorFallback();
+            }
+        }
+
+        fileInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            statusIndicator.innerHTML = `🔄 檔案解析中...`;
+            statusIndicator.className = "text-sm font-bold text-blue-600 w-full md:w-auto text-left md:text-right mt-2 md:mt-0 px-3 py-1 bg-blue-100 rounded-full shadow-sm";
+
+            if (file.name.toLowerCase().endsWith('.csv')) {
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: function(results) { processParsedData(results.data); },
+                    error: function() { showErrorFallback(); }
+                });
+            } else {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    parseExcelData(data);
+                };
+                reader.onerror = function() { showErrorFallback(); };
+                reader.readAsArrayBuffer(file);
+            }
+        });
+
+        function renderTimetable(teacherName) {
+            timetableBody.innerHTML = ''; 
+            
+            if (!teacherName || !scheduleByTeacher[teacherName]) {
+                resultHeader.classList.add('hidden');
+                timetableBody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="px-6 py-20 text-center text-red-500 bg-red-50">
+                            <div class="flex flex-col items-center">
+                                <svg class="w-16 h-16 text-red-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                <p class="text-xl font-bold">找不到「${teacherName || '空值'}」的課表</p>
+                                <p class="text-sm mt-2">請確認教師姓名是否輸入正確。</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            // 更新並顯示教師大標題
+            currentTeacherTitle.textContent = `${teacherName} 教師課表`;
+            resultHeader.classList.remove('hidden');
+
+            const teacherData = scheduleByTeacher[teacherName];
+            const periods = [
+                { num: 1, label: "第1節" }, { num: 2, label: "第2節" },
+                { num: 3, label: "第3節" }, { num: 4, label: "第4節" },
+                { num: 5, label: "第5節" }, { num: 6, label: "第6節" },
+                { num: 7, label: "第7節" }, { num: 8, label: "第8節" }
+            ];
+
+            periods.forEach((p, index) => {
+                const tr = document.createElement('tr');
+                
+                // 【重點】強制設定每一列高度完全一致 (h-[140px])
+                tr.className = "h-[140px] hover:bg-blue-50/30 transition-colors"; 
+                if (index === 3) tr.classList.add("table-row-sep");
+
+                let rowHtml = `
+                    <td class="px-2 py-3 border-r border-gray-200 bg-gray-50/80 text-gray-700 text-center whitespace-nowrap align-middle shadow-[inset_-1px_0_0_rgba(0,0,0,0.05)]">
+                        <div class="font-black text-[1.1rem] mb-1.5 text-blue-900">${p.label}</div>
+                        <div class="inline-flex flex-col gap-0.5">
+                            <div class="text-[0.7rem] px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 tracking-tighter font-bold">國 ${juniorHighTimes[p.num]}</div>
+                            <div class="text-[0.7rem] px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 tracking-tighter font-bold">高 ${seniorHighTimes[p.num]}</div>
+                        </div>
+                    </td>`;
+
+                for (let day = 1; day <= 5; day++) {
+                    let cellContent = ''; 
+
+                    if (teacherData[day] && teacherData[day][p.num] && teacherData[day][p.num].length > 0) {
+                        const classes = teacherData[day][p.num];
+                        
+                        classes.sort((a, b) => {
+                            if (a.oddEven === '單' && b.oddEven === '雙') return -1;
+                            if (a.oddEven === '雙' && b.oddEven === '單') return 1;
+                            return 0;
+                        });
+
+                        let innerHtml = '';
+
+                        classes.forEach((cellData, idx) => {
+                            let clsName = cellData.className.toString().replace(/\.0$/, '');
+                            const classDisplay = clsName ? `(${clsName})` : '';
+                            
+                            // 第一行：科目(班級)
+                            let htmlContent = `
+                                <div class="font-extrabold text-blue-900 text-[1.15rem] leading-snug mb-1 drop-shadow-sm">
+                                    ${cellData.subject}${classDisplay}
+                                </div>
+                            `;
+                            
+                            // 第二行：起訖時間 + (單/雙週)
+                            let oddEvenString = cellData.oddEven ? ` <span class="text-[0.85rem] text-red-600 font-bold ml-1 px-1 bg-red-50 rounded">(${cellData.oddEven}週)</span>` : '';
+                            htmlContent += `
+                                <div class="text-[0.85rem] font-bold text-gray-600 mb-1">
+                                    ${cellData.timeStr}${oddEvenString}
+                                </div>
+                            `;
+                            
+                            // 第三行：地點 (灰色質感標籤)
+                            if (cellData.location) {
+                                htmlContent += `
+                                    <div class="inline-block px-2.5 py-1 bg-gray-100 border border-gray-200 text-gray-600 font-medium rounded-md text-[0.8rem] shadow-sm">
+                                        📍 ${cellData.location}
+                                    </div>
+                                `;
+                            } else {
+                                htmlContent += `<div class="h-[1.75rem]"></div>`;
+                            }
+
+                            const separatorClass = idx > 0 ? "border-t-2 border-dashed border-gray-200 pt-3 mt-3" : "";
+                            innerHtml += `<div class="${separatorClass}">${htmlContent}</div>`;
+                        });
+
+                        cellContent = `<div class="p-2 h-full flex flex-col justify-center items-center">${innerHtml}</div>`;
+                    }
+                    rowHtml += `<td class="px-2 py-2 border-r border-gray-200 align-middle">${cellContent}</td>`;
+                }
+
+                tr.innerHTML = rowHtml;
+                timetableBody.appendChild(tr);
+            });
+        }
+
+        searchBtn.addEventListener('click', handleSearch);
+        teacherInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleSearch();
+        });
+
+        function handleSearch() {
+            const teacherName = teacherInput.value.trim();
+            if (teacherName) renderTimetable(teacherName);
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            setTimeout(attemptAutoLoad, 100);
+        });
+
+    </script>
+</body>
+</html>
